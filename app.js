@@ -29,6 +29,17 @@ class TaskList {
         // To get the nextId, the max of all Ids needs to be found (rather
         // than just using the length) to account for deleted tasks.
         this.nextId = taskIds.length ? Math.max(...taskIds) + 1 : 1;
+        this.filter = "all";
+    }
+
+    get displayedTasks() {
+        const tasks = this.tasks;
+        console.log("dt")
+        switch(this.filter) {
+            case "all": return tasks;
+            case "active": return tasks.filter(t => !t.isCompleted);
+            case "completed": return tasks.filter(t => t.isCompleted);
+        }
     }
 
     addTask(text) {
@@ -51,6 +62,10 @@ class TaskList {
         const index = this.tasks.findIndex(t => t.id === task.id);
         this.tasks.splice(index, 1);
     }
+
+    setFilter(filter) {
+        this.filter = filter; 
+    }
 }
 
 // Function: createTaskStore
@@ -59,7 +74,7 @@ function createTaskStore() {
         localStorage.setItem("owl-todoapp", JSON.stringify(taskStore.tasks));
     }
 
-    const initialTasks = JSON.parse(localStorage.getItem("owl-todoapp") || "[]")
+    const initialTasks = JSON.parse(localStorage.getItem("owl-todoapp") || "[]");
     const taskStore = reactive(new TaskList(initialTasks), saveTasks);
     saveTasks(); // Initial observation
     return taskStore;
@@ -114,6 +129,30 @@ InputField.template = xml /*xml*/`
     </div>
 `;
 
+class TaskPanel extends Component {
+    setup() {
+        this.store = useStore();
+        this.state = useState({
+            displayedTasks: this.props.displayedTasks,
+        });
+    }
+}
+TaskPanel.template = xml /*xml*/`
+    <div class="task-panel" t-if="store.tasks.length">
+        <div class="task-counter">
+            <t t-esc="store.displayedTasks.length"/>
+            <t t-if="store.displayedTasks.length lt store.tasks.length">
+                / <t t-esc="store.tasks.length"/>
+            </t>
+            task(s)
+        </div>
+        <div class="task-filters">
+            <span t-foreach="['all', 'active', 'completed']" t-as="f" t-key="f" t-att-class="{active: store.filter === f}"
+                t-on-click="() => store.setFilter(f)" t-esc="f"/>
+        </div>
+    </div>
+`;
+
 
 // --------------------------------------------------------------------------
 // Main Component
@@ -126,6 +165,10 @@ InputField.template = xml /*xml*/`
 class Root extends Component {
     setup() {
         this.store = useStore();
+        this.state = useState({
+            filter: "all",
+            displayedTasks: []
+        })
     }
 
     addTask(e) {
@@ -135,12 +178,13 @@ class Root extends Component {
         }
     }
 }
-Root.components = { InputField, Task };
+Root.components = { InputField, TaskPanel, Task };
 Root.template = xml /*xml*/`
     <div class = "todo-app">
         <InputField inputName="'New Task'" handleKeypress.bind="addTask" isFocused="true"/>
+        <TaskPanel />
         <div class="task-list">
-            <t t-foreach="store.tasks" t-as="task" t-key="task.id">
+            <t t-foreach="store.displayedTasks" t-as="task" t-key="task.id">
                 <Task task="task"/>
             </t>
         </div>
