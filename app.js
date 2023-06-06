@@ -10,7 +10,8 @@ const { Component, mount, xml, reactive, useState, useRef, useEnv, onMounted } =
 //  When state is modified in the store, all components who are using it will 
 //  automatically receive notifications and update their state accordingly.
 //  This is due to createTaskStore being called to establish the env, and it
-//  creates a reactive instantiation of TaskList.
+//  creates a reactive instantiation of TaskList. Everytime the store is
+//  modified, the tasks will be saved using the nested saveTasks function.
 // --------------------------------------------------------------------------
 
 // Hook: useStore
@@ -21,8 +22,14 @@ function useStore() {
 
 // Class (non-component): TaskList
 class TaskList {
-    nextId = 1;
-    tasks = [];
+    constructor(tasks) {
+        // If there are existing tasks, use those. Otherwise start anew.
+        this.tasks = tasks || [];
+        const taskIds = this.tasks.map(t => t.id);
+        // To get the nextId, the max of all Ids needs to be found (rather
+        // than just using the length) to account for deleted tasks.
+        this.nextId = taskIds.length ? Math.max(...taskIds) + 1 : 1;
+    }
 
     addTask(text) {
         text = text.trim();
@@ -48,7 +55,14 @@ class TaskList {
 
 // Function: createTaskStore
 function createTaskStore() {
-    return reactive(new TaskList());
+    function saveTasks() {
+        localStorage.setItem("owl-todoapp", JSON.stringify(taskStore.tasks));
+    }
+
+    const initialTasks = JSON.parse(localStorage.getItem("owl-todoapp") || "[]")
+    const taskStore = reactive(new TaskList(initialTasks), saveTasks);
+    saveTasks(); // Initial observation
+    return taskStore;
 }
 
 
