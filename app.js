@@ -1,28 +1,88 @@
-const { Component, mount, xml, useState, useRef, onMounted } = owl;
+const { Component, mount, xml, reactive, useState, useRef, useEnv, onMounted } = owl;
 
-// Owl Components
+// --------------------------------------------------------------------------
+// Store
+//  The useStore hook and the TaskList class compose the store for this file.
+//  The TaskList defines the data held within the store, which is shared by
+//  all components who acess the store. A component can access the store by
+//  calling the useStore hook in their setup method. 
+//
+//  When state is modified in the store, all components who are using it will 
+//  automatically receive notifications and update their state accordingly.
+//  This is due to createTaskStore being called to establish the env, and it
+//  creates a reactive instantiation of TaskList.
+// --------------------------------------------------------------------------
 
-/*  Component: Task
- *  
- */
-class Task extends Component {
-    deleteTask() {
-        this.props.onDelete(this.props.task);
+// Hook: useStore
+function useStore() {
+    const env = useEnv();
+    return useState(env.store);
+}
+
+// Class (non-component): TaskList
+class TaskList {
+    nextId = 1;
+    tasks = [];
+
+    addTask(text) {
+        text = text.trim();
+        if (!text) return;
+
+        const newTask = {
+            id: this.nextId++,
+            text: text,
+            isCompleted: false,
+        };
+        this.tasks.push(newTask);
+    }
+
+    toggleTask(task) {
+        task.isCompleted = !task.isCompleted;
+    }
+
+    deleteTask(task) {
+        const index = this.tasks.findIndex(t => t.id === task.id);
+        this.tasks.splice(index, 1);
     }
 }
-Task.props = ["task", "onChange", "onDelete"]
+
+// Function: createTaskStore
+function createTaskStore() {
+    return reactive(new TaskList());
+}
+
+
+// --------------------------------------------------------------------------
+// Auxiliary Components
+//  The Task and InputField components support the Root component. 
+//  Task contains the structure of each task and the relevant calls to the
+//  store. The text for each task is used as a label and automatically mapped 
+//  to its associated checkbox.
+//  InputField creates a text field and associated label, with an automatically
+//  generated name to map the label to the field. Additionally, the input field 
+//  can optionally be focused when the page is loaded.
+// --------------------------------------------------------------------------
+
+// Component: Task
+class Task extends Component {
+    setup() {
+        this.store = useStore();
+    }
+}
+Task.props = ["task"]
 Task.template = xml /*xml*/`
     <div class="task" t-att-class="props.task.isCompleted ? 'done' : ''">
-        <input type="checkbox" t-att-checked="props.task.isCompleted" t-attf-id="task-checkbox-{{props.task.id}}" t-attf-name="task-checkbox-{{props.task.id}}" t-on-change="(e) => props.onChange(e, props.task)"/>
+        <input type="checkbox" t-att-checked="props.task.isCompleted" t-attf-id="task-checkbox-{{props.task.id}}" t-attf-name="task-checkbox-{{props.task.id}}" t-on-change="() => store.toggleTask(props.task)"/>
         <label t-attf-for="task-checkbox-{{props.task.id}}"><t t-esc="props.task.text"/></label>
-        <span class="delete" t-on-click="deleteTask">🗑</span>
-    </div>`
+        <span class="delete" t-on-click="() => store.deleteTask(props.task)">🗑</span>
+    </div>
+`;
 
-/*  Component: InputField
- *  
- */
+
+// Component: InputField
 class InputField extends Component {
     setup() {
+        this.store = useStore();
         this.state = useState({
             technicalName: this.props.inputName.toLowerCase().replaceAll(' ', '-'),
         });
@@ -32,86 +92,50 @@ class InputField extends Component {
         }
     }
 }
-InputField.props = ["inputName", "onInput", "handleKeypress", "isFocused"]
+InputField.props = ["inputName", "handleKeypress", "isFocused"]
 InputField.template = xml /*xml*/`
     <div class="input-field">
         <label t-attf-for="input-field-{{this.state.technicalName}}"><t t-esc="props.inputName"/></label>
-        <input type="text" t-ref="add-input" t-on-input="props.onInput" t-on-keypress="props.handleKeypress" t-attf-name="input-field-{{this.state.technicalName}}"/>
+        <input type="text" t-ref="add-input" t-on-keypress="props.handleKeypress" t-attf-name="input-field-{{this.state.technicalName}}"/>
     </div>
 `;
 
-const tasks = [
-    {
-        id: 1,
-        text: "buy milk",
-        isCompleted: true,
-    },
-    {
-        id: 2, 
-        text: "clean house",
-        isCompleted: false,
-    },
-];
 
-
-/*  Component: Root
- *  Entrypoint for the owl app
- */
+// --------------------------------------------------------------------------
+// Main Component
+//  This is the entrypoint for the todo list application. It displays the 
+//  input field where the user can specify a new task using the InputField
+//  component. Every task inside the store is then listed using the Task
+//  component.
+// --------------------------------------------------------------------------
+// Component: Root
 class Root extends Component {
-    // this is a state variable, obviously don't modify any
-    // of this programatically; only event driven changes
-    // should occur. in a real implementation the demo data
-    // should be loaded in here in setup()
     setup() {
-        this.state = useState({
-            input: "",
-            nextId: 1,
-            tasks: []
-        });
-    }
-    updateTask(e, task) { 
-        if (e.target.value === "on") {
-            this.state.tasks[task.id-1].isCompleted = !task.isCompleted;
-        }
-    }
-    updateInput(e) {
-        this.state.input = e.target.value;
+        this.store = useStore();
     }
 
     addTask(e) {
         if (e.key === "Enter") {
-            const text = e.target.value;
+            this.store.addTask(e.target.value);
             e.target.value = "";
-            if (!text) return;
-            const newTask = {
-                id: this.state.nextId++,
-                text: text,
-                isCompleted: false,
-            };
-            this.state.tasks.push(newTask);
         }
     }
-    deleteTask(task) {
-        const index = this.state.tasks.findIndex(t => t.id === task.id);
-        this.state.tasks.splice(index, 1);
-    }
 }
-
 Root.components = { InputField, Task };
 Root.template = xml /*xml*/`
-<div class = "todo-app">
-    <InputField inputName="'New Task'" onInput.bind="updateInput" handleKeypress.bind="addTask" isFocused="true"/>
-    <div class="task-list">
-        <t t-foreach="this.state.tasks" t-as="task" t-key="task.id">
-            <Task task="task" onChange.bind="updateTask" onDelete.bind="deleteTask"/>
-        </t>
+    <div class = "todo-app">
+        <InputField inputName="'New Task'" handleKeypress.bind="addTask" isFocused="true"/>
+        <div class="task-list">
+            <t t-foreach="store.tasks" t-as="task" t-key="task.id">
+                <Task task="task"/>
+            </t>
+        </div>
     </div>
-</div>`;
+`;
 
 
-
-
-
-mount(Root, document.body, {dev: true});
-
-
+// Setup
+const env = {
+    store: createTaskStore(),
+};
+mount(Root, document.body, {dev: true, env});
